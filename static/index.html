@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Welfare Scheme Assistant | सरकारी योजना सहायक</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #e5ddd5;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  #app {
+    width: 100%;
+    max-width: 480px;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+  }
+  header {
+    background: #075e54;
+    color: #fff;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .avatar {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: #25d366;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+  }
+  header h1 { font-size: 16px; font-weight: 600; }
+  header p  { font-size: 12px; color: #b2dfdb; margin-top: 2px; }
+  #reset-btn {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.4);
+    color: #fff;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    cursor: pointer;
+  }
+  #messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: #e5ddd5;
+  }
+  .bubble {
+    max-width: 82%;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .bubble.bot {
+    background: #fff;
+    align-self: flex-start;
+    border-top-left-radius: 2px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.1);
+  }
+  .bubble.user {
+    background: #dcf8c6;
+    align-self: flex-end;
+    border-top-right-radius: 2px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.1);
+  }
+  .bubble.typing {
+    background: #fff;
+    align-self: flex-start;
+    color: #888;
+    font-style: italic;
+  }
+  .quick-replies {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 4px 10px 8px;
+    background: #e5ddd5;
+  }
+  .qr-btn {
+    background: #fff;
+    border: 1px solid #075e54;
+    color: #075e54;
+    padding: 5px 12px;
+    border-radius: 16px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .qr-btn:hover { background: #e8f5e9; }
+  #input-row {
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    background: #f0f0f0;
+    flex-shrink: 0;
+    align-items: flex-end;
+  }
+  #user-input {
+    flex: 1;
+    border: none;
+    border-radius: 20px;
+    padding: 10px 16px;
+    font-size: 15px;
+    outline: none;
+    resize: none;
+    max-height: 100px;
+    line-height: 1.4;
+    font-family: inherit;
+  }
+  #send-btn {
+    width: 42px; height: 42px;
+    border-radius: 50%;
+    background: #075e54;
+    border: none;
+    color: #fff;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  #send-btn:disabled { background: #aaa; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="avatar">🏛️</div>
+    <div>
+      <h1>Welfare Scheme Assistant</h1>
+      <p>सरकारी योजना सहायक • PM-KISAN & Ayushman</p>
+    </div>
+    <button id="reset-btn" onclick="resetChat()">↺ Restart</button>
+  </header>
+
+  <div id="messages"></div>
+  <div class="quick-replies" id="quick-replies"></div>
+
+  <div id="input-row">
+    <textarea id="user-input" rows="1" placeholder="Type a message / मैसेज टाइप करें..."></textarea>
+    <button id="send-btn" onclick="sendMessage()">➤</button>
+  </div>
+</div>
+
+<script>
+  let sessionId = null;
+  let currentState = 'idle';
+
+  const QUICK_REPLY_MAP = {
+    idle:        ['Hi', 'शुरू करें'],
+    lang_select: ['1 - English', '2 - हिंदी'],
+    menu:        ['1', '2', '3', '4', '5'],
+    eligibility: ['1', '2', '3', '4'],
+    results:     ['1', '2', 'menu'],
+    docs:        ['1', '2', 'menu'],
+    freeform:    ['menu', 'restart'],
+  };
+
+  const QUICK_REPLY_LABELS = {
+    '1 - English': '1 - English',
+    '2 - हिंदी': '2 - हिंदी',
+    '1': '1', '2': '2', '3': '3', '4': '4', '5': '5',
+    'menu': '📋 Menu', 'restart': '🔄 Restart',
+    'Hi': 'Hi 👋', 'शुरू करें': 'शुरू करें 👋',
+  };
+
+  async function sendMessage(text) {
+    const input = document.getElementById('user-input');
+    const msg = (text || input.value).trim();
+    if (!msg) return;
+
+    input.value = '';
+    input.style.height = 'auto';
+    appendBubble('user', msg);
+    clearQuickReplies();
+
+    const typingId = appendBubble('bot', '...', 'typing');
+    document.getElementById('send-btn').disabled = true;
+
+    try {
+      const res = await fetch('/chat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({session_id: sessionId, message: msg}),
+      });
+      const data = await res.json();
+      sessionId = data.session_id;
+      currentState = data.state;
+
+      removeBubble(typingId);
+      appendBubble('bot', data.reply);
+      renderQuickReplies(currentState);
+    } catch(e) {
+      removeBubble(typingId);
+      appendBubble('bot', '⚠️ Connection error. Please try again.');
+    }
+    document.getElementById('send-btn').disabled = false;
+    scrollToBottom();
+  }
+
+  function appendBubble(role, text, extraClass) {
+    const el = document.createElement('div');
+    const id = 'b' + Date.now() + Math.random();
+    el.id = id;
+    el.className = 'bubble ' + role + (extraClass ? ' ' + extraClass : '');
+    el.textContent = text;
+    document.getElementById('messages').appendChild(el);
+    scrollToBottom();
+    return id;
+  }
+
+  function removeBubble(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  }
+
+  function clearQuickReplies() {
+    document.getElementById('quick-replies').innerHTML = '';
+  }
+
+  function renderQuickReplies(state) {
+    const container = document.getElementById('quick-replies');
+    container.innerHTML = '';
+    const opts = QUICK_REPLY_MAP[state] || [];
+    opts.forEach(opt => {
+      const btn = document.createElement('button');
+      btn.className = 'qr-btn';
+      btn.textContent = QUICK_REPLY_LABELS[opt] || opt;
+      btn.onclick = () => sendMessage(opt.split(' - ')[0]); // strip label
+      container.appendChild(btn);
+    });
+  }
+
+  function scrollToBottom() {
+    const m = document.getElementById('messages');
+    m.scrollTop = m.scrollHeight;
+  }
+
+  async function resetChat() {
+    if (sessionId) {
+      await fetch('/reset', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({session_id: sessionId}),
+      });
+    }
+    sessionId = null;
+    currentState = 'idle';
+    document.getElementById('messages').innerHTML = '';
+    clearQuickReplies();
+    sendMessage('start');
+  }
+
+  // Auto-resize textarea
+  const ta = document.getElementById('user-input');
+  ta.addEventListener('input', () => {
+    ta.style.height = 'auto';
+    ta.style.height = ta.scrollHeight + 'px';
+  });
+  ta.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  // Kick off on load
+  window.onload = () => sendMessage('start');
+</script>
+</body>
+</html>
